@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RemoteX — Remote Desktop via Email</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+<style>
+:root{--bg-deep:#080c10;--bg-panel:#0c1016;--bg-card:#111820;--bg-el:#182028;--border:#1c2630;--border-a:#2a3a4a;
+--fg:#d0dae4;--fg-m:#607080;--fg-d:#384858;--acc:#10b981;--acc-d:rgba(16,185,129,.12);--acc-g:rgba(16,185,129,.3);
+--danger:#ef4444;--warn:#f59e0b;--info:#06b6d4;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Space Grotesk',sans-serif;background:var(--bg-deep);color:var(--fg);overflow:hidden;height:100vh}
+.mono{font-family:'JetBrains Mono',monospace}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:var(--border-a);border-radius:10px}
+.bg-fx{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:radial-gradient(ellipse 500px 400px at 15% 25%,rgba(16,185,129,.05),transparent),
+  radial-gradient(ellipse 400px 400px at 85% 75%,rgba(6,182,212,.03),transparent)}
+.grid-fx{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.2;
+  background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:50px 50px}
+
+.screen{position:absolute;inset:0;z-index:1;display:none;flex-direction:column}.screen.active{display:flex}
+
+.inp{background:var(--bg-deep);border:1px solid var(--border);border-radius:8px;padding:11px 14px;color:var(--fg);font-size:13px;
+  font-family:'JetBrains Mono',monospace;outline:none;width:100%;transition:border .2s}
+.inp:focus{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-d)}.inp::placeholder{color:var(--fg-d)}
+
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;
+  border:1px solid var(--border);background:var(--bg-el);color:var(--fg);cursor:pointer;transition:all .2s;font-family:'Space Grotesk',sans-serif}
+.btn:hover{border-color:var(--border-a);transform:translateY(-1px)}
+.btn-a{background:var(--acc);color:var(--bg-deep);border-color:var(--acc)}
+.btn-a:hover{background:#059669;border-color:#059669;box-shadow:0 0 24px var(--acc-g)}
+.btn-d{border-color:var(--danger);color:var(--danger)}.btn-d:hover{background:rgba(239,68,68,.1)}
+.btn-s{padding:6px 12px;font-size:11px}
+.btn-i{width:34px;height:34px;padding:0;display:flex;align-items:center;justify-content:center;border-radius:6px;
+  border:1px solid var(--border);background:var(--bg-el);color:var(--fg-m);cursor:pointer;transition:all .2s}
+.btn-i:hover{color:var(--fg);border-color:var(--border-a)}
+.btn-i.on{color:var(--acc);border-color:var(--acc);background:var(--acc-d)}
+
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
+.b-on{background:rgba(16,185,129,.12);color:var(--acc)}
+.b-wait{background:rgba(245,158,11,.12);color:var(--warn)}
+.b-pulse::before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.7)}}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes ripple{to{transform:translate(-50%,-50%) scale(2.5);opacity:0}}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{animation:spin 1s linear infinite}
+
+.dev-card{padding:16px;border-radius:12px;border:1px solid var(--border);background:var(--bg-card);transition:all .25s;cursor:default}
+.dev-card.clickable:hover{border-color:var(--acc);box-shadow:0 0 24px var(--acc-d);transform:translateY(-2px);cursor:pointer}
+.dev-card.hosting{border-color:var(--acc);box-shadow:0 0 20px var(--acc-d)}
+.dev-icon{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+
+.toast-c{position:fixed;top:16px;right:16px;z-index:9999;display:flex;flex-direction:column;gap:8px;pointer-events:none}
+.toast{padding:10px 16px;border-radius:8px;font-size:12px;font-weight:500;display:flex;align-items:center;gap:8px;pointer-events:auto;
+  animation:fadeUp .3s ease;border:1px solid var(--border);background:var(--bg-card);box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.toast-s{border-left:3px solid var(--acc)}.toast-e{border-left:3px solid var(--danger)}.toast-i{border-left:3px solid var(--info)}
+
+.pn{background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.pn-h{background:var(--bg-card);border-bottom:1px solid var(--border);padding:8px 12px;display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--fg-m)}
+.pn-h i{color:var(--acc);font-size:10px}.pn-b{padding:10px}
+
+.tab-b{display:flex;gap:2px;background:var(--bg-deep);border-radius:6px;padding:3px}
+.tab-i{padding:5px 12px;border-radius:4px;font-size:11px;font-weight:500;color:var(--fg-d);cursor:pointer;transition:all .2s;border:none;background:transparent;font-family:inherit}
+.tab-i:hover{color:var(--fg-m)}.tab-i.on{background:var(--bg-el);color:var(--acc)}
+
+.chat-m{max-width:80%;padding:8px 12px;border-radius:10px;font-size:12px;line-height:1.5;margin-bottom:6px}
+.chat-l{background:var(--acc-d);color:var(--acc);margin-left:auto;border-bottom-right-radius:3px}
+.chat-r{background:var(--bg-el);color:var(--fg);border-bottom-left-radius:3px}
+
+.cursor-o{position:absolute;width:20px;height:20px;pointer-events:none;z-index:10;display:none;transition:left .04s linear,top .04s linear}
+.cursor-o::before{content:'';position:absolute;left:0;top:0;width:0;height:0;border-left:10px solid var(--acc);border-top:4px solid transparent;border-bottom:4px solid transparent;filter:drop-shadow(0 0 4px var(--acc-g))}
+.scanlines{position:absolute;inset:0;pointer-events:none;z-index:5;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.03) 2px,rgba(0,0,0,.03) 4px)}
+
+.notif-banner{position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;padding:12px 24px;border-radius:12px;
+  background:rgba(16,185,129,.15);border:1px solid var(--acc);backdrop-filter:blur(12px);display:none;align-items:center;gap:10px;
+  animation:fadeUp .4s ease;box-shadow:0 8px 32px rgba(0,0,0,.4)}
+.notif-banner.show{display:flex}
+
+@media(max-width:768px){
+  .dash-grid{grid-template-columns:1fr!important}
+  .sess-side{display:none!important}
+}
+</style>
+</head>
+<body>
+<div class="bg-fx"></div>
+<div class="grid-fx"></div>
+<div class="toast-c" id="toasts"></div>
+
+<!-- ============ LOGIN ============ -->
+<div class="screen active" id="sLogin">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px">
+    <div style="width:400px;max-width:100%;animation:fadeUp .6s ease">
+      <div style="text-align:center;margin-bottom:36px">
+        <div style="width:68px;height:68px;border-radius:16px;background:var(--acc-d);display:inline-flex;align-items:center;justify-content:center;margin-bottom:16px;animation:float 3s ease-in-out infinite">
+          <i class="fas fa-satellite-dish" style="font-size:28px;color:var(--acc)"></i>
+        </div>
+        <h1 style="font-size:36px;font-weight:700;letter-spacing:-.03em">Remote<span style="color:var(--acc)">X</span></h1>
+        <p style="font-size:13px;color:var(--fg-m);margin-top:6px">Remote desktop antar browser — login dengan email kantor</p>
+      </div>
+      <div style="background:var(--bg-panel);border:1px solid var(--border);border-radius:14px;padding:28px">
+        <label style="font-size:11px;font-weight:600;color:var(--fg-m);text-transform:uppercase;letter-spacing:.06em;display:block;margin-bottom:6px">Email Kantor</label>
+        <div style="position:relative;margin-bottom:18px">
+          <i class="fas fa-envelope" style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--fg-d);font-size:13px"></i>
+          <input class="inp" id="loginEmail" type="email" placeholder="kantorbapenda@gmail.com" style="padding-left:36px" autocomplete="email">
+        </div>
+        <button class="btn btn-a" style="width:100%;padding:12px;font-size:14px" id="loginBtn" onclick="doLogin()">
+          <i class="fas fa-right-to-bracket"></i> Masuk
+        </button>
+      </div>
+      <p style="text-align:center;margin-top:18px;font-size:10px;color:var(--fg-d);display:flex;align-items:center;justify-content:center;gap:5px">
+        <i class="fas fa-lock" style="color:var(--acc);font-size:8px"></i> Koneksi WebRTC end-to-end terenkripsi
+      </p>
+    </div>
+  </div>
+</div>
+
+<!-- ============ DASHBOARD ============ -->
+<div class="screen" id="sDash">
+  <!-- Header -->
+  <header style="height:50px;background:var(--bg-panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0">
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="width:28px;height:28px;border-radius:7px;background:var(--acc-d);display:flex;align-items:center;justify-content:center">
+        <i class="fas fa-satellite-dish" style="font-size:12px;color:var(--acc)"></i>
+      </div>
+      <span style="font-size:14px;font-weight:700">RemoteX</span>
+    </div>
+    <div style="width:1px;height:22px;background:var(--border);margin:0 4px"></div>
+    <div style="display:flex;align-items:center;gap:8px;flex:1;min-width:0">
+      <i class="fas fa-envelope" style="font-size:11px;color:var(--fg-d)"></i>
+      <span style="font-size:12px;color:var(--fg-m);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="dashEmail">—</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px" id="gunStatus">
+      <i class="fas fa-spinner spin" style="font-size:10px;color:var(--warn)"></i>
+      <span style="font-size:10px;color:var(--fg-d)">Menghubungkan...</span>
+    </div>
+    <button class="btn btn-s" onclick="doLogout()" style="border-color:var(--danger);color:var(--danger)"><i class="fas fa-right-from-bracket"></i> Keluar</button>
+  </header>
+
+  <!-- Content -->
+  <div style="flex:1;overflow-y:auto;padding:24px;max-width:900px;margin:0 auto;width:100%">
+    <!-- Perangkat Ini -->
+    <div style="margin-bottom:24px">
+      <h2 style="font-size:13px;font-weight:600;color:var(--fg-m);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">
+        <i class="fas fa-circle-dot" style="color:var(--acc);margin-right:6px;font-size:10px"></i>Perangkat Ini
+      </h2>
+      <div class="dev-card" id="thisDevCard">
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="dev-icon" id="thisDevIcon" style="background:var(--acc-d);color:var(--acc)"><i class="fas fa-desktop"></i></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:600" id="thisDevName">—</div>
+            <div class="mono" style="font-size:10px;color:var(--fg-d);margin-top:2px" id="thisDevInfo">—</div>
+          </div>
+          <span class="badge b-on b-pulse" id="thisDevStatus">Online</span>
+        </div>
+        <div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap" id="hostControls">
+          <button class="btn btn-a btn-s" id="hostBtn" onclick="toggleHosting()"><i class="fas fa-broadcast-tower"></i> Mulai Hosting</button>
+          <div id="hostCodeWrap" style="display:none;align-items:center;gap:8px;flex:1;min-width:200px">
+            <div style="background:var(--bg-deep);border:1px dashed var(--border-a);border-radius:6px;padding:6px 14px;flex:1;text-align:center">
+              <span style="font-size:9px;color:var(--fg-d);text-transform:uppercase;letter-spacing:.08em">Kode</span>
+              <div class="mono" style="font-size:18px;font-weight:700;color:var(--acc);letter-spacing:.15em" id="hostCode">------</div>
+            </div>
+            <button class="btn-i" onclick="copyCode()" title="Salin Kode"><i class="fas fa-copy" style="font-size:11px"></i></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Perangkat Lain -->
+    <div style="margin-bottom:24px">
+      <h2 style="font-size:13px;font-weight:600;color:var(--fg-m);text-transform:uppercase;letter-spacing:.06em;margin-bottom:12px">
+        <i class="fas fa-tower-broadcast" style="color:var(--info);margin-right:6px;font-size:10px"></i>Perangkat Lain Online
+        <span style="font-size:11px;color:var(--fg-d);font-weight:400;margin-left:8px" id="otherCount">(0)</span>
+      </h2>
+      <div id="otherDevs" class="dash-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div style="grid-column:1/-1;text-align:center;padding:32px;color:var(--fg-d);font-size:12px" id="otherEmpty">
+          <i class="fas fa-magnifying-glass" style="font-size:22px;display:block;margin-bottom:8px;opacity:.3"></i>
+          Belum ada perangkat lain yang online dengan email ini.<br>
+          <span style="font-size:10px">Buka browser lain, login dengan email yang sama, lalu mulai hosting.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kode Manual -->
+    <div style="margin-bottom:24px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:11px;color:var(--fg-d);text-transform:uppercase;letter-spacing:.06em">atau hubungkan dengan kode</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <input class="inp" id="manualCode" placeholder="Masukkan 6 karakter kode..." maxlength="6" style="flex:1;text-transform:uppercase;letter-spacing:.2em;text-align:center;font-size:16px;font-weight:700">
+        <button class="btn btn-a" onclick="connectByCode()"><i class="fas fa-plug"></i> Hubungkan</button>
+      </div>
+    </div>
+
+    <!-- Info -->
+    <div class="pn" style="background:var(--bg-card)">
+      <div class="pn-b" style="font-size:11px;color:var(--fg-m);line-height:1.7;display:flex;gap:10px">
+        <i class="fas fa-shield-halved" style="color:var(--acc);margin-top:2px;flex-shrink:0"></i>
+        <div>
+          <strong style="color:var(--fg)">Cara kerja:</strong> Login dengan email yang sama di 2 browser. Satu browser klik "Mulai Hosting", browser lain klik "Kontrol" pada perangkat tersebut. Koneksi langsung P2P via WebRTC — tidak melewati server manapun. Hanya berfungsi untuk mengontrol <em>konten browser</em>, bukan OS.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SESSION ============ -->
+<div class="screen" id="sSession">
+  <!-- Notif banner host -->
+  <div class="notif-banner" id="hostNotif">
+    <i class="fas fa-hand-pointer" style="font-size:18px;color:var(--acc)"></i>
+    <div>
+      <div style="font-size:13px;font-weight:600">Controller terhubung!</div>
+      <div style="font-size:11px;color:var(--fg-m)">Klik tombol untuk mulai berbagi layar.</div>
+    </div>
+    <button class="btn btn-a btn-s" onclick="hostStartShare()" style="margin-left:8px"><i class="fas fa-share-screen"></i> Bagikan Layar</button>
+  </div>
+
+  <!-- Header -->
+  <header style="height:44px;background:var(--bg-panel);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:10px;flex-shrink:0;z-index:20">
+    <div style="display:flex;align-items:center;gap:7px">
+      <div style="width:26px;height:26px;border-radius:6px;background:var(--acc-d);display:flex;align-items:center;justify-content:center">
+        <i class="fas fa-satellite-dish" style="font-size:11px;color:var(--acc)"></i>
+      </div>
+      <span style="font-size:13px;font-weight:700">RemoteX</span>
+    </div>
+    <div style="width:1px;height:18px;background:var(--border)"></div>
+    <span class="badge b-on b-pulse" id="sessStatus">Terhubung</span>
+    <span style="font-size:11px;color:var(--fg-m)" id="sessTarget">—</span>
+    <span style="font-size:10px;color:var(--fg-d);margin-left:auto" class="mono" id="sessMode">—</span>
+    <div style="display:flex;gap:4px">
+      <button class="btn-i" onclick="takeScreenshot()" title="Screenshot"><i class="fas fa-camera" style="font-size:12px"></i></button>
+      <button class="btn-i" onclick="toggleFS()" title="Fullscreen"><i class="fas fa-maximize" style="font-size:12px"></i></button>
+      <div style="width:1px;height:18px;background:var(--border);margin:0 2px"></div>
+      <button class="btn-i" style="border-color:var(--danger)" onclick="disconnect()" title="Putuskan"><i class="fas fa-power-off" style="font-size:12px;color:var(--danger)"></i></button>
+    </div>
+  </header>
+
+  <!-- Body -->
+  <div style="flex:1;display:flex;overflow:hidden">
+    <main style="flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative">
+      <div style="flex:1;position:relative;background:#050508;display:flex;align-items:center;justify-content:center;overflow:hidden" id="viewerBox">
+        <div id="viewerPH" style="text-align:center;z-index:2">
+          <div style="width:72px;height:72px;border-radius:18px;background:var(--acc-d);display:inline-flex;align-items:center;justify-content:center;margin-bottom:14px">
+            <i class="fas fa-display" style="font-size:28px;color:var(--acc)" id="phIcon"></i>
+          </div>
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:4px" id="phTitle">Menunggu Layar</h3>
+          <p style="font-size:12px;color:var(--fg-m);max-width:320px" id="phDesc">Host belum membagikan layar.</p>
+        </div>
+        <video id="rVideo" autoplay playsinline style="display:none;position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000"></video>
+        <div class="scanlines"></div>
+        <div class="cursor-o" id="curOvr"></div>
+        <canvas id="drawCv" style="position:absolute;inset:0;pointer-events:none;z-index:15"></canvas>
+      </div>
+      <!-- Toolbar controller -->
+      <div style="height:40px;background:var(--bg-card);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 10px;gap:4px;flex-shrink:0" id="ctrlBar">
+        <button class="btn-i btn-s on" id="tPtr" onclick="setTool('ptr')"><i class="fas fa-mouse-pointer" style="font-size:11px"></i></button>
+        <button class="btn-i btn-s" id="tDraw" onclick="setTool('draw')"><i class="fas fa-pen" style="font-size:11px"></i></button>
+        <div style="width:1px;height:16px;background:var(--border);margin:0 4px"></div>
+        <button class="btn-i btn-s" onclick="sendSC('ctrl+c')" title="Ctrl+C"><span class="mono" style="font-size:8px">C-c</span></button>
+        <button class="btn-i btn-s" onclick="sendSC('ctrl+v')" title="Ctrl+V"><span class="mono" style="font-size:8px">C-v</span></button>
+        <button class="btn-i btn-s" onclick="sendSC('ctrl+z')" title="Ctrl+Z"><span class="mono" style="font-size:8px">C-z</span></button>
+        <button class="btn-i btn-s" onclick="sendSC('ctrl+a')" title="Ctrl+A"><span class="mono" style="font-size:8px">C-a</span></button>
+        <button class="btn-i btn-s" onclick="sendSC('alt+tab')" title="Alt+Tab"><span class="mono" style="font-size:8px">A-t</span></button>
+        <span style="margin-left:auto;font-size:10px;color:var(--fg-d)" class="mono" id="streamInf">—</span>
+      </div>
+    </main>
+
+    <!-- Sidebar -->
+    <aside class="sess-side" style="width:250px;min-width:250px;background:var(--bg-panel);border-left:1px solid var(--border);display:flex;flex-direction:column;overflow:hidden">
+      <div style="padding:8px 10px;border-bottom:1px solid var(--border)">
+        <div class="tab-b" style="width:100%">
+          <button class="tab-i on" onclick="switchSTab('chat',this)">Chat</button>
+          <button class="tab-i" onclick="switchSTab('info',this)">Info</button>
+        </div>
+      </div>
+      <div id="stChat" style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+        <div style="flex:1;overflow-y:auto;padding:10px;display:flex;flex-direction:column;justify-content:flex-end" id="chatMsgs"></div>
+        <div style="padding:8px;border-top:1px solid var(--border);display:flex;gap:6px">
+          <input class="inp" placeholder="Ketik pesan..." id="chatInp" onkeydown="if(event.key==='Enter')sendChat()" style="font-family:'Space Grotesk',sans-serif;font-size:12px">
+          <button class="btn btn-a btn-s" onclick="sendChat()"><i class="fas fa-paper-plane"></i></button>
+        </div>
+      </div>
+      <div id="stInfo" style="flex:1;overflow-y:auto;padding:10px;display:none;flex-direction:column;gap:8px">
+        <div class="pn"><div class="pn-h"><i class="fas fa-circle-info"></i> Detail Sesi</div>
+          <div class="pn-b" style="font-size:11px;display:flex;flex-direction:column;gap:5px" id="sessInfoC"></div>
+        </div>
+        <div class="pn"><div class="pn-h"><i class="fas fa-shield-halved"></i> Keamanan</div>
+          <div class="pn-b" style="font-size:11px;color:var(--fg-m);line-height:1.6">Koneksi terenkripsi DTLS via WebRTC. Data langsung P2P antar browser tanpa melewati server.</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Status bar -->
+  <footer style="height:24px;background:var(--bg-card);border-top:1px solid var(--border);display:flex;align-items:center;padding:0 14px;gap:16px;flex-shrink:0">
+    <span style="font-size:9px;color:var(--fg-d);display:flex;align-items:center;gap:4px"><i class="fas fa-lock" style="font-size:7px;color:var(--acc)"></i> WebRTC E2E</span>
+    <span style="font-size:9px;color:var(--fg-d);margin-left:auto" class="mono" id="sessTimer">00:00:00</span>
+  </footer>
+</div>
+
+<script>
+/* ================================================================
+   STATE
+   ================================================================ */
+const S = {
+  email:null, deviceId:null, peer:null, dataConn:null, mediaConn:null,
+  localStream:null, hosting:false, connected:false, streaming:false,
+  mode:null, code:null, remotePeerId:null, tool:'ptr', isDraw:false,
+  sessStart:null, timerInt:null, gunOk:false, heartInt:null, gunListener:null
+};
+let gun;
+
+/* ================================================================
+   UTILITAS
+   ================================================================ */
+function genCode(){const c='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';let r='';for(let i=0;i<6;i++)r+=c[Math.floor(Math.random()*c.length)];return r}
+function hash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h)+s.charCodeAt(i);h|=0}return'h'+Math.abs(h).toString(36)}
+function getDevId(){let id=localStorage.getItem('rx-did');if(!id){id='d'+Date.now().toString(36)+Math.random().toString(36).substr(2,5);localStorage.setItem('rx-did',id)}return id}
+function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+function detectOS(){
+  const u=navigator.userAgent;
+  if(/Windows/.test(u))return{os:'Windows',icon:'fa-desktop',color:'#06b6d4'};
+  if(/Mac/.test(u))return{os:'macOS',icon:'fa-laptop',color:'#a78bfa'};
+  if(/Linux/.test(u))return{os:'Linux',icon:'fa-desktop',color:'#f59e0b'};
+  if(/Android/.test(u))return{os:'Android',icon:'fa-mobile-screen-button',color:'#10b981'};
+  if(/iPhone|iPad/.test(u))return{os:'iOS',icon:'fa-mobile-screen-button',color:'#64748b'};
+  return{os:'Unknown',icon:'fa-display',color:'#607080'}
+}
+function detectBrowser(){
+  const u=navigator.userAgent;
+  if(/Edg\//.test(u))return'Edge';if(/OPR\//.test(u))return'Opera';
+  if(/Chrome\//.test(u))return'Chrome';if(/Firefox\//.test(u))return'Firefox';
+  if(/Safari\//.test(u))return'Safari';return'Browser'
+}
+function timeAgo(ts){const d=Math.floor((Date.now()-ts)/1000);if(d<5)return'baru saja';if(d<60)return d+' detik lalu';if(d<3600)return Math.floor(d/60)+' menit lalu';return Math.floor(d/3600)+' jam lalu'}
+function showScr(id){document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));document.getElementById(id).classList.add('active')}
+
+function toast(msg,type='i'){
+  const c=document.getElementById('toasts'),t=document.createElement('div');
+  t.className='toast toast-'+type;
+  const ic={s:'fa-check-circle',e:'fa-exclamation-circle',i:'fa-info-circle'};
+  const cl={s:'var(--acc)',e:'var(--danger)',i:'var(--info)'};
+  t.innerHTML=`<i class="fas ${ic[type]}" style="color:${cl[type]}"></i> ${msg}`;
+  c.appendChild(t);
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(40px)';t.style.transition='all .3s';setTimeout(()=>t.remove(),300)},3500);
+}
+
+/* ================================================================
+   GUN.JS — DISCOVERY
+   ================================================================ */
+function initGun(){
+  try{
+    gun=Gun({peers:['https://gun-manhattan.herokuapp.com/gun'],localStorage:false});
+    // Test koneksi
+    const testRef=gun.get('rx-ping-'+Date.now());
+    testRef.once(d=>{S.gunOk=true;updateGunUI()});
+    setTimeout(()=>{if(!S.gunOk){S.gunOk=false;updateGunUI()}},5000);
+  }catch(e){S.gunOk=false;updateGunUI();console.warn('Gun gagal:',e)}
+}
+
+function updateGunUI(){
+  const el=document.getElementById('gunStatus');
+  if(S.gunOk){
+    el.innerHTML='<i class="fas fa-check-circle" style="font-size:10px;color:var(--acc)"></i><span style="font-size:10px;color:var(--acc)">Discovery aktif</span>';
+  }else{
+    el.innerHTML='<i class="fas fa-triangle-exclamation" style="font-size:10px;color:var(--warn)"></i><span style="font-size:10px;color:var(--warn)">Gunakan kode manual</span>';
+  }
+}
+
+function registerGun(){
+  if(!S.gunOk||!S.peer||!S.email)return;
+  const node=gun.get('rx-email').get(hash(S.email));
+  node.get(S.deviceId).put({
+    peerId:S.peer.id,deviceName:detectOS().os,browser:detectBrowser(),
+    email:S.email,status:'online',ts:Date.now()
+  });
+  // Heartbeat setiap 20 detik
+  S.heartInt=setInterval(()=>{
+    if(!S.peer||!S.peer.destroyed){
+      node.get(S.deviceId).put({ts:Date.now(),status:'online'});
+    }
+  },20000);
+}
+
+function unregisterGun(){
+  if(S.gunOk&&S.email){
+    try{gun.get('rx-email').get(hash(S.email)).get(S.deviceId).put({status:'offline',ts:0})}catch(e){}
+  }
+  if(S.heartInt){clearInterval(S.heartInt);S.heartInt=null}
+}
+
+function watchOtherDevices(){
+  if(!S.gunOk||!S.email)return;
+  const node=gun.get('rx-email').get(hash(S.email));
+  const devs=new Map();
+
+  S.gunListener=node.map().on((data,key)=>{
+    if(!data||!data.peerId||key===S.deviceId)return;
+    if(data.status==='offline'){devs.delete(key)}
+    else if(Date.now()-(data.ts||0)<50000){devs.set(key,{...data,_key:key})}
+    else{devs.delete(key)}
+    renderOthers(devs);
+  });
+
+  // Polling cadangan setiap 5 detik
+  setInterval(()=>{
+    node.map().once((data,key)=>{
+      if(!data||!data.peerId||key===S.deviceId)return;
+      if(data.status==='offline'){devs.delete(key)}
+      else if(Date.now()-(data.ts||0)<50000){devs.set(key,{...data,_key:key})}
+      else{devs.delete(key)}
+      renderOthers(devs);
+    });
+  },5000);
+}
+
+function renderOthers(devs){
+  const cont=document.getElementById('otherDevs');
+  const empty=document.getElementById('otherEmpty');
+  const count=document.getElementById('otherCount');
+  const arr=[...devs.values()];
+  count.textContent=`(${arr.length})`;
+
+  if(arr.length===0){empty.style.display='block';return}
+  empty.style.display='none';
+
+  // Hapus kartu lama (bukan empty)
+  cont.querySelectorAll('.other-card').forEach(c=>c.remove());
+
+  arr.forEach(d=>{
+    const info=detectOS();
+    const card=document.createElement('div');
+    card.className='dev-card clickable other-card';
+    card.innerHTML=`
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <div class="dev-icon" style="background:${info.color}18;color:${info.color}"><i class="fas ${info.icon}"></i></div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600">${esc(d.deviceName||'Perangkat')}</div>
+          <div class="mono" style="font-size:10px;color:var(--fg-d)">${esc(d.browser||'?')} &middot; ${timeAgo(d.ts)}</div>
+        </div>
+        <span class="badge b-on b-pulse">Online</span>
+      </div>
+      <button class="btn btn-a btn-s" style="width:100%" onclick="event.stopPropagation();connectToHost('${d.peerId}','${esc(d.deviceName||'Perangkat')}')">
+        <i class="fas fa-hand-pointer"></i> Kontrol Perangkat Ini
+      </button>`;
+    cont.appendChild(card);
+  });
+}
+
+/* ================================================================
+   PEERJS
+   ================================================================ */
+function createPeer(id){
+  return new Promise((res,rej)=>{
+    const p=new Peer('rx-'+id,{
+      config:{iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]}
+    });
+    const to=setTimeout(()=>{p.destroy();rej(new Error('Timeout PeerJS'))},15000);
+    p.on('open',()=>{clearTimeout(to);res(p)});
+    p.on('error',err=>{clearTimeout(to);rej(err)});
+  });
+}
+
+/* ================================================================
+   LOGIN
+   ================================================================ */
+async function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  if(!email||!email.includes('@')){toast('Masukkan email yang valid','e');return}
+
+  const btn=document.getElementById('loginBtn');
+  btn.innerHTML='<i class="fas fa-spinner spin"></i> Masuk...';btn.disabled=true;
+
+  S.email=email;S.deviceId=getDevId();
+  const devInfo=detectOS();
+
+  try{
+    S.peer=await createPeer(S.code||genCode());
+    S.code=S.peer.id.replace('rx-','').substring(0,6).toUpperCase();
+
+    // Setup listener call (untuk controller, sebelum connect)
+    S.peer.on('call',call=>{
+      call.answer();
+      call.on('stream',stream=>{S.streaming=true;showStream(stream)});
+      call.on('close',()=>{S.streaming=false;hideStream()});
+      S.mediaConn=call;
+    });
+
+    // Setup listener connection (untuk host)
+    S.peer.on('connection',conn=>{
+      S.dataConn=conn;
+      wireData(conn,'host');
+      conn.on('open',()=>{
+        conn.send({t:'hello',mode:'host',email:S.email,devName:devInfo.os+' '+detectBrowser(),code:S.code});
+        S.connected=true;S.remotePeerId=conn.peer;
+        enterSession();
+        toast('Controller terhubung!','s');
+      });
+    });
+
+    // Tampilkan dashboard
+    showScr('sDash');
+    document.getElementById('dashEmail').textContent=email;
+    document.getElementById('thisDevName').textContent=devInfo.os+' — '+detectBrowser();
+    document.getElementById('thisDevInfo').textContent='ID: '+S.deviceId+' · Peer: '+S.peer.id;
+    document.getElementById('thisDevIcon').innerHTML=`<i class="fas ${devInfo.icon}"></i>`;
+    document.getElementById('thisDevIcon').style.color=devInfo.color;
+    document.getElementById('thisDevIcon').style.background=devInfo.color+'18';
+
+    // Daftar ke Gun
+    registerGun();
+    watchOtherDevices();
+
+    toast('Berhasil masuk sebagai '+email,'s');
+  }catch(e){
+    toast('Gagal: '+e.message,'e');
+  }
+
+  btn.innerHTML='<i class="fas fa-right-to-bracket"></i> Masuk';btn.disabled=false;
+}
+
+function doLogout(){cleanup();showScr('sLogin');toast('Berhasil keluar','i')}
+
+/* ================================================================
+   HOSTING
+   ================================================================ */
+function toggleHosting(){
+  if(S.hosting){stopHost();return}
+  S.hosting=true;
+  document.getElementById('hostBtn').innerHTML='<i class="fas fa-stop"></i> Berhenti Hosting';
+  document.getElementById('hostBtn').className='btn btn-d btn-s';
+  document.getElementById('hostCodeWrap').style.display='flex';
+  document.getElementById('hostCode').textContent=S.code;
+  document.getElementById('thisDevCard').classList.add('hosting');
+  document.getElementById('thisDevStatus').className='badge b-wait b-pulse';
+  document.getElementById('thisDevStatus').textContent='Hosting';
+  toast('Hosting dimulai! Kode: '+S.code,'s');
+}
+
+function stopHost(){
+  S.hosting=false;
+  document.getElementById('hostBtn').innerHTML='<i class="fas fa-broadcast-tower"></i> Mulai Hosting';
+  document.getElementById('hostBtn').className='btn btn-a btn-s';
+  document.getElementById('hostCodeWrap').style.display='none';
+  document.getElementById('thisDevCard').classList.remove('hosting');
+  document.getElementById('thisDevStatus').className='badge b-on b-pulse';
+  document.getElementById('thisDevStatus').textContent='Online';
+  toast('Hosting dihentikan','i');
+}
+
+function copyCode(){
+  if(!S.code)return;
+  navigator.clipboard.writeText(S.code).then(()=>toast('Kode disalin: '+S.code,'s')).catch(()=>{});
+}
+
+/* ================================================================
+   CONTROLLER: HUBUNGKAN KE HOST
+   ================================================================ */
+async function connectToHost(peerId,name){
+  toast('Menghubungkan ke '+name+'...','i');
+  try{
+    if(!S.peer){
+      S.peer=await createPeer(genCode());
+      S.peer.on('call',call=>{
+        call.answer();call.on('stream',stream=>{S.streaming=true;showStream(stream)});
+        call.on('close',()=>{S.streaming=false;hideStream()});S.mediaConn=call;
+      });
+    }
+    const conn=S.peer.connect(peerId,{reliable:true});
+    S.dataConn=conn;wireData(conn,'ctrl');
+    conn.on('open',()=>{
+      conn.send({t:'hello',mode:'ctrl',peerId:S.peer.id});
+      S.connected=true;S.remotePeerId=peerId;S.mode='ctrl';
+      enterSession();
+      document.getElementById('sessTarget').textContent=name||'Host';
+      toast('Terhubung ke '+name,'s');
+    });
+  }catch(e){toast('Gagal: '+e.message,'e')}
+}
+
+function connectByCode(){
+  const code=document.getElementById('manualCode').value.trim().toUpperCase();
+  if(code.length!==6){toast('Masukkan 6 karakter kode','e');return}
+  connectToHost('rx-'+code,'Host ('+code+')');
+}
+
+/* ================================================================
+   DATA CHANNEL
+   ================================================================ */
+function wireData(conn,role){
+  conn.on('data',d=>{
+    if(!d||!d.t)return;
+    switch(d.t){
+      case 'hello':
+        if(role==='host'&&d.peerId)S.remotePeerId=d.peerId;
+        if(role==='ctrl'){document.getElementById('sessTarget').textContent=d.devName||d.email||'Host'}
+        break;
+      case 'req-stream':
+        if(role==='host')document.getElementById('hostNotif').classList.add('show');
+        break;
+      case 'stream-ready':
+        if(role==='ctrl'){document.getElementById('phTitle').textContent='Stream Dimulai...';document.getElementById('phDesc').textContent='Host sedang membagikan layar.'}
+        break;
+      case 'stream-end':
+        if(role==='ctrl'){hideStream();document.getElementById('phTitle').textContent='Stream Dihentikan';document.getElementById('phDesc').textContent='Host menghentikan pembagian layar.'}
+        break;
+      case 'mm':if(role==='host')applyMM(d);break;
+      case 'mc':if(role==='host')applyMC(d);break;
+      case 'md':if(role==='host')applyMD(d);break;
+      case 'ms':if(role==='host')applyMS(d);break;
+      case 'kd':if(role==='host')applyKD(d);break;
+      case 'ku':if(role==='host')applyKU(d);break;
+      case 'sc':if(role==='host')applySC(d.combo);break;
+      case 'chat':addChat(d.from,d.text,d.time);break;
+      case 'draw':if(role==='host')applyDraw(d);break;
+    }
+  });
+  conn.on('close',()=>{S.connected=false;toast('Koneksi terputus','e')});
+}
+
+function send(d){if(S.dataConn&&S.dataConn.open)try{S.dataConn.send(d)}catch(e){}}
+
+/* ================================================================
+   SCREEN CAPTURE (HOST)
+   ================================================================ */
+async function hostStartShare(){
+  document.getElementById('hostNotif').classList.remove('show');
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){toast('Browser tidak mendukung screen sharing','e');return}
+  try{
+    const stream=await navigator.mediaDevices.getDisplayMedia({video:{cursor:'always',width:{ideal:1920},height:{ideal:1080}},audio:false});
+    S.localStream=stream;S.streaming=true;
+    send({t:'stream-ready'});
+
+    if(S.remotePeerId&&S.peer){
+      const call=S.peer.call(S.remotePeerId,stream);
+      S.mediaConn=call;
+      call.on('close',()=>{S.streaming=false;send({t:'stream-end'})});
+    }
+    stream.getVideoTracks()[0].onended=()=>{
+      S.streaming=false;S.localStream=null;send({t:'stream-end'});
+      if(S.mediaConn){S.mediaConn.close();S.mediaConn=null}
+      toast('Pembagian layar dihentikan','i');
+    };
+    toast('Layar sedang dibagikan','s');
+    updateStreamInf();
+  }catch(e){
+    if(e.name!=='NotAllowedError')toast('Gagal: '+e.message,'e');
+  }
+}
+
+/* ================================================================
+   STREAM DISPLAY (CONTROLLER)
+   ================================================================ */
+function showStream(stream){
+  const v=document.getElementById('rVideo');
+  v.srcObject=stream;v.style.display='block';
+  document.getElementById('viewerPH').style.display='none';
+  updateStreamInf();setupRemoteEvents(v);
+}
+function hideStream(){
+  const v=document.getElementById('rVideo');v.srcObject=null;v.style.display='none';
+  document.getElementById('viewerPH').style.display='block';
+  document.getElementById('streamInf').textContent='—';
+}
+function updateStreamInf(){
+  const v=document.getElementById('rVideo');
+  const upd=()=>{if(v.videoWidth)document.getElementById('streamInf').textContent=v.videoWidth+'x'+v.videoHeight};
+  upd();v.addEventListener('loadedmetadata',upd,{once:true});
+}
+
+/* ================================================================
+   REMOTE EVENTS (CONTROLLER → HOST)
+   ================================================================ */
+function setupRemoteEvents(v){
+  v.addEventListener('mousemove',e=>{
+    if(S.tool==='draw'&&S.isDraw){
+      const r=v.getBoundingClientRect();
+      send({t:'draw',a:'l',x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height,c:'#10b981'});return;
+    }
+    const r=v.getBoundingClientRect();
+    const x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
+    send({t:'mm',x,y});
+    const co=document.getElementById('curOvr');co.style.display='block';
+    co.style.left=(e.clientX-v.parentElement.getBoundingClientRect().left)+'px';
+    co.style.top=(e.clientY-v.parentElement.getBoundingClientRect().top)+'px';
+  });
+  v.addEventListener('mousedown',e=>{
+    e.preventDefault();const r=v.getBoundingClientRect();
+    const x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;
+    if(S.tool==='draw'){S.isDraw=true;send({t:'draw',a:'s',x,y,c:'#10b981'});return}
+    send({t:'mc',x,y,b:e.button===2?'r':'l'});
+    addRipple(e,v.parentElement);
+  });
+  v.addEventListener('mouseup',()=>{S.isDraw=false});
+  v.addEventListener('mouseleave',()=>{S.isDraw=false;document.getElementById('curOvr').style.display='none'});
+  v.addEventListener('dblclick',e=>{e.preventDefault();const r=v.getBoundingClientRect();send({t:'md',x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height})});
+  v.addEventListener('wheel',e=>{e.preventDefault();const r=v.getBoundingClientRect();send({t:'ms',dx:e.deltaX,dy:e.deltaY,x:(e.clientX-r.left)/r.width,y:(e.clientY-r.top)/r.height})},{passive:false});
+  v.addEventListener('contextmenu',e=>e.preventDefault());
+
+  v.setAttribute('tabindex','0');
+  v.addEventListener('keydown',e=>{e.preventDefault();send({t:'kd',key:e.key,code:e.code,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey})});
+  v.addEventListener('keyup',e=>{e.preventDefault();send({t:'ku',key:e.key,code:e.code,ctrl:e.ctrlKey,shift:e.shiftKey,alt:e.altKey,meta:e.metaKey})});
+  v.focus();
+}
+
+function addRipple(e,p){
+  const r=document.createElement('div');const pr=p.getBoundingClientRect();
+  r.style.cssText=`position:absolute;left:${e.clientX-pr.left}px;top:${e.clientY-pr.top}px;width:20px;height:20px;border-radius:50%;pointer-events:none;z-index:20;border:2px solid var(--acc);transform:translate(-50%,-50%) scale(0);animation:ripple .5s ease-out forwards`;
+  p.appendChild(r);setTimeout(()=>r.remove(),500);
+}
+
+/* ================================================================
+   APPLY EVENTS (HOST)
+   ================================================================ */
+function applyMM(d){
+  const x=d.x*window.innerWidth,y=d.y*window.innerHeight;
+  let ind=document.getElementById('hCur');if(!ind){ind=document.createElement('div');ind.id='hCur';
+    ind.style.cssText='position:fixed;width:20px;height:20px;pointer-events:none;z-index:999999;border:2px solid var(--acc);border-radius:50%;box-shadow:0 0 12px var(--acc-g);transition:left .04s,top .04s';
+    document.body.appendChild(ind)}
+  ind.style.left=(x-10)+'px';ind.style.top=(y-10)+'px';
+}
+function applyMC(d){
+  const x=d.x*window.innerWidth,y=d.y*window.innerHeight,bn=d.b==='r'?2:0;
+  const el=document.elementFromPoint(x,y);
+  if(el){el.dispatchEvent(new MouseEvent('mousedown',{clientX:x,clientY:y,button:bn,bubbles:true}));
+    el.dispatchEvent(new MouseEvent('mouseup',{clientX:x,clientY:y,button:bn,bubbles:true}));
+    el.dispatchEvent(new MouseEvent('click',{clientX:x,clientY:y,button:bn,bubbles:true}))}
+}
+function applyMD(d){const x=d.x*window.innerWidth,y=d.y*window.innerHeight;const el=document.elementFromPoint(x,y);if(el)el.dispatchEvent(new MouseEvent('dblclick',{clientX:x,clientY:y,bubbles:true}))}
+function applyMS(d){const x=d.x*window.innerWidth,y=d.y*window.innerHeight;const el=document.elementFromPoint(x,y);if(el)el.dispatchEvent(new WheelEvent('wheel',{deltaX:d.dx,deltaY:d.dy,clientX:x,clientY:y,bubbles:true}))}
+function applyKD(d){document.dispatchEvent(new KeyboardEvent('keydown',{key:d.key,code:d.code,ctrlKey:d.ctrl,shiftKey:d.shift,altKey:d.alt,metaKey:d.meta,bubbles:true}))}
+function applyKU(d){document.dispatchEvent(new KeyboardEvent('keyup',{key:d.key,code:d.code,ctrlKey:d.ctrl,shiftKey:d.shift,altKey:d.alt,metaKey:d.meta,bubbles:true}))}
+function applySC(combo){const p=combo.toLowerCase().split('+');const k=p.filter(x=>!['ctrl','shift','alt','win','meta'].includes(x))[0];
+  document.dispatchEvent(new KeyboardEvent('keydown',{key:k,code:'Key'+k.toUpperCase(),ctrlKey:p.includes('ctrl'),shiftKey:p.includes('shift'),altKey:p.includes('alt'),metaKey:p.includes('win')||p.includes('meta'),bubbles:true}));
+  setTimeout(()=>document.dispatchEvent(new KeyboardEvent('keyup',{key:k,code:'Key'+k.toUpperCase(),ctrlKey:p.includes('ctrl'),shiftKey:p.includes('shift'),altKey:p.includes('alt'),metaKey:p.includes('win')||p.includes('meta'),bubbles:true})),50)}
+function applyDraw(d){
+  const cv=document.getElementById('drawCv'),ctx=cv.getContext('2d'),dpr=window.devicePixelRatio||1;
+  const x=d.x*cv.width/dpr,y=d.y*cv.height/dpr;
+  if(d.a==='s'){ctx.beginPath();ctx.moveTo(x,y)}
+  else if(d.a==='l'){ctx.strokeStyle=d.c||'#10b981';ctx.lineWidth=2;ctx.lineCap='round';ctx.lineTo(x,y);ctx.stroke()}
+}
+
+/* ================================================================
+   SESSION UI
+   ================================================================ */
+function enterSession(){
+  S.sessStart=Date.now();showScr('sSession');
+  document.getElementById('sessMode').textContent=S.mode==='ctrl'?'Controller':'Host';
+  if(S.mode!=='ctrl'){document.getElementById('ctrlBar').style.display='none';
+    document.getElementById('phTitle').textContent='Menunggu Controller';
+    document.getElementById('phDesc').textContent='Controller akan meminta layar saat terhubung.';
+  }else{
+    document.getElementById('ctrlBar').style.display='flex';
+    setTimeout(()=>send({t:'req-stream'}),800);
+  }
+  // Resize draw canvas
+  const cv=document.getElementById('drawCv'),box=document.getElementById('viewerBox'),dpr=window.devicePixelRatio||1;
+  cv.width=box.clientWidth*dpr;cv.height=box.clientHeight*dpr;
+  // Timer
+  S.timerInt=setInterval(()=>{
+    if(!S.sessStart)return;const e=Math.floor((Date.now()-S.sessStart)/1000);
+    document.getElementById('sessTimer').textContent=
+      String(Math.floor(e/3600)).padStart(2,'0')+':'+String(Math.floor(e%3600/60)).padStart(2,'0')+':'+String(e%60).padStart(2,'0');
+  },1000);
+  updateSessInfo();
+}
+
+function updateSessInfo(){
+  const c=document.getElementById('sessInfoC');if(!c)return;
+  c.innerHTML=`
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--fg-m)">Mode</span><span>${S.mode==='ctrl'?'Controller':'Host'}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--fg-m)">Kode</span><span class="mono">${S.code||'—'}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--fg-m)">Email</span><span class="mono" style="font-size:10px">${S.email||'—'}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--fg-m)">Streaming</span><span style="color:${S.streaming?'var(--acc)':'var(--fg-d)'}">${S.streaming?'Ya':'Tidak'}</span></div>
+    <div style="display:flex;justify-content:space-between"><span style="color:var(--fg-m)">Peer ID</span><span class="mono" style="font-size:9px;color:var(--fg-d)">${S.peer?S.peer.id:'—'}</span></div>`;
+}
+
+function switchSTab(tab,btn){
+  document.querySelectorAll('#sSession .tab-i').forEach(b=>b.classList.remove('on'));btn.classList.add('on');
+  document.getElementById('stChat').style.display=tab==='chat'?'flex':'none';
+  document.getElementById('stInfo').style.display=tab==='info'?'flex':'none';
+}
+
+function setTool(t){
+  S.tool=t;document.querySelectorAll('#tPtr,#tDraw').forEach(b=>b.classList.remove('on'));
+  document.getElementById(t==='ptr'?'tPtr':'tDraw').classList.add('on');
+  const v=document.getElementById('rVideo');v.style.cursor=t==='draw'?'crosshair':'default';
+  document.getElementById('drawCv').style.pointerEvents=t==='draw'?'auto':'none';
+}
+
+function sendSC(c){send({t:'sc',combo:c});toast('Shortcut: '+c,'i')}
+function takeScreenshot(){
+  const v=document.getElementById('rVideo');if(!v.srcObject){toast('Tidak ada stream','e');return}
+  const cv=document.createElement('canvas');cv.width=v.videoWidth;cv.height=v.videoHeight;
+  cv.getContext('2d').drawImage(v,0,0);const a=document.createElement('a');
+  a.download='remotex-'+Date.now()+'.png';a.href=cv.toDataURL();a.click();toast('Screenshot disimpan','s');
+}
+function toggleFS(){const el=document.getElementById('viewerBox');if(!document.fullscreenElement)el.requestFullscreen().catch(()=>{});else document.exitFullscreen()}
+
+/* ================================================================
+   CHAT
+   ================================================================ */
+function sendChat(){
+  const inp=document.getElementById('chatInp'),text=inp.value.trim();if(!text)return;
+  const time=new Date().toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'});
+  addChat(S.mode||'host',text,time);send({t:'chat',from:S.mode||'host',text,time});inp.value='';
+}
+function addChat(from,text,time){
+  const c=document.getElementById('chatMsgs'),loc=from===(S.mode||'host');
+  const lbl=loc?'Anda':(S.mode==='host'?'Controller':'Host');
+  c.innerHTML+=`<div class="chat-m ${loc?'chat-l':'chat-r'}"><div style="font-size:9px;color:var(--fg-d);margin-bottom:2px">${lbl} · ${time}</div>${esc(text)}</div>`;
+  c.scrollTop=c.scrollHeight;
+}
+
+/* ================================================================
+   CLEANUP
+   ================================================================ */
+function disconnect(){send({t:'stream-end'});cleanup();showScr('sDash');toast('Sesi dihentikan','i')}
+
+function cleanup(){
+  if(S.localStream){S.localStream.getTracks().forEach(t=>t.stop());S.localStream=null}
+  if(S.mediaConn)try{S.mediaConn.close()}catch(e){}S.mediaConn=null;
+  if(S.dataConn)try{S.dataConn.close()}catch(e){}S.dataConn=null;
+  if(S.peer)try{S.peer.destroy()}catch(e){}S.peer=null;
+  const ci=document.getElementById('hCur');if(ci)ci.remove();
+  unregisterGun();
+  S.connected=false;S.streaming=false;S.hosting=false;S.code=null;S.remotePeerId=null;S.isDraw=false;S.mode=null;
+  if(S.timerInt){clearInterval(S.timerInt);S.timerInt=null}
+  const v=document.getElementById('rVideo');v.srcObject=null;v.style.display='none';
+  document.getElementById('viewerPH').style.display='block';
+  document.getElementById('curOvr').style.display='none';
+  document.getElementById('hostNotif').classList.remove('show');
+  document.getElementById('drawCv').getContext('2d').clearRect(0,0,9999,9999);
+  document.getElementById('chatMsgs').innerHTML='';
+  // Reset dashboard
+  document.getElementById('hostBtn').innerHTML='<i class="fas fa-broadcast-tower"></i> Mulai Hosting';
+  document.getElementById('hostBtn').className='btn btn-a btn-s';
+  document.getElementById('hostCodeWrap').style.display='none';
+  document.getElementById('thisDevCard').classList.remove('hosting');
+  document.getElementById('thisDevStatus').className='badge b-on b-pulse';
+  document.getElementById('thisDevStatus').textContent='Online';
+}
+
+/* ================================================================
+   INIT
+   ================================================================ */
+initGun();
+
+window.addEventListener('beforeunload',()=>{unregisterGun();if(S.localStream)S.localStream.getTracks().forEach(t=>t.stop());if(S.peer)S.peer.destroy()});
+
+document.addEventListener('keydown',e=>{
+  if(document.getElementById('sSession').classList.contains('active')&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName)){
+    if(e.key==='F11'){e.preventDefault();toggleFS()}
+  }
+});
+
+// Auto-connect dari hash URL
+if(location.hash.startsWith('#c=')){
+  const c=location.hash.replace('#c=','').toUpperCase();
+  if(c.length===6)setTimeout(()=>{document.getElementById('manualCode').value=c;connectByCode()},300);
+}
+</script>
+</body>
+</html>
